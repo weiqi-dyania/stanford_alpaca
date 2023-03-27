@@ -12,6 +12,7 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+import time
 import copy
 import logging
 from dataclasses import dataclass, field
@@ -21,6 +22,9 @@ import torch
 import transformers
 from torch.utils.data import Dataset
 from transformers import Trainer
+
+#from transformers import AutoConfig, AutoModelForCausalLM
+#from accelerate import init_empty_weights, load_checkpoint_and_dispatch
 
 import utils
 
@@ -193,9 +197,30 @@ def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+
+    warning_msg = """!!!!!!
+REMEMBER TO COMMENT OUT THE LINE 714-717 in /opt/conda/lib/python3.8/site-packages/torch/distributed/fsdp/flat_param.py
+OTHERWISE YOU WILL NOT BE ABLE TO SAVE YOUR MODEL!!!!!!
+```
+            #p_assert(
+            #    unsharded_flat_param.dtype != self._config.param_dtype,
+            #    f"Expects full precision but got {self._config.param_dtype}",
+            #)
+```"""
+    logging.warning(warning_msg)
+    time.sleep(10)
+
+    """
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+    with init_empty_weights():
+        model = AutoModelForCausalLM.from_config(config)
+    model = load_checkpoint_and_dispatch(model, model_args.model_name_or_path, device_map={'': 'cpu'})
+    """
+
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
+        torch_dtype=torch.bfloat16,
     )
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -212,6 +237,7 @@ def train():
             model=model,
         )
     if "llama" in model_args.model_name_or_path:
+        logging.warning("\n\n!!!!!!!!!!\nLlama model, add special tokens\n!!!!!!!!!!\n")
         tokenizer.add_special_tokens(
             {
                 "eos_token": DEFAULT_EOS_TOKEN,
